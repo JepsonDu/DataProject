@@ -1,5 +1,5 @@
 # DataProject1
-These are the project I have done about data analysis, machine learning and business analysis.
+These are the projects I have done about data analysis, machine learning and business analysis.
 
 The Used car price prediction project
 -----------------
