@@ -1,7 +1,7 @@
 # DataProject1
 These are the projects I have done about data analysis, machine learning and business analysis.
 
-The Used car price prediction project
+The Used Car Price Prediction
 -----------------
 The Used car price prediction project aim to create a predictive model using 400K+ eBay car saleing dataset. The whole project process includes: Data cleaning, feature engineering  and model training. The final model has a nearly 87% accuracy.
 
