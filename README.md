@@ -13,6 +13,6 @@ The Heart Disease Classification
 ------------------
 The project is about building a classification model for the 'heart disease data' to predict if the patience has the heart disease or not according to the several features of the patience. 
 
-R shiny application
+Google Play R-shiny Application
 ------------------
 The R-shiny app is about the interactive discriptive analysis and the regression prediction visualize graph using R and developed  with 10k+ data of the Google Play.
