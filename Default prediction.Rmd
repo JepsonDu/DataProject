@@ -1,0 +1,504 @@
+---
+title: "Data Mining Group Project"
+author: "Jepson Du"
+date: "3/26/2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## I. Load the data
+```{r}
+#import data from the websource
+
+library(readxl)
+url<-"https://archive.ics.uci.edu/ml/machine-learning-databases/00350/default%20of%20credit%20card%20clients.xls"
+destfile <- "default_of_clients.xls"
+curl::curl_download(url, destfile)
+df <- read_excel(destfile)
+names(df) <- df[1,]
+df<-df[-1,]
+```
+
+## II. Data Cleaning
+
+## data processing
+```{r}
+library(ggplot2)
+library(tidyr)
+library(lattice)
+library(dplyr)
+library(Rmisc)
+
+#check if there are missing or anomalous data
+
+sum(is.na(df))  #zero missing value in the dataset
+
+#summary(df)
+
+#converting columns to number
+pay.cols.names=paste0("PAY_",c(0,2:6))
+bill.cols.names=paste0("BILL_AMT", c(1:6))
+payment.cols.names=paste0("PAY_AMT",c(1:6))
+col.to.num=c(bill.cols.names,payment.cols.names,pay.cols.names,"LIMIT_BAL","AGE")
+df[col.to.num]=lapply(df[col.to.num],as.numeric)
+names(df)[names(df) == "default payment next month"] <-"DEF" #rename the column default
+
+# Categorical variables description and processing
+#No missing data, but a few anomalous things:EDUCATION has category 5 and 6 that are unlabelled, moreover the category 0 is undocumented.
+#MARRIAGE has a label 0 that is undocumented
+#we decided to lable the MARRIAGE and EDUCATION category as 0 into others
+df$EDUCATION <- as.numeric(df$EDUCATION)
+
+df[which(df$EDUCATION==5),'EDUCATION']=4
+df[which(df$EDUCATION==6),'EDUCATION']=4
+df[which(df$EDUCATION==0),'EDUCATION']=4
+
+
+
+#convert it into factor
+
+col.to.factor=c('SEX','EDUCATION','MARRIAGE',"DEF")
+df[col.to.factor]=lapply(df[col.to.factor],factor)
+summary(df[,c('SEX','EDUCATION','MARRIAGE','DEF')]) 
+
+summary(df)
+```
+
+
+```{r}
+
+## Payment delay description
+summary(df[pay.cols.names])
+#there is undocumented -2 and 0, we think it as the customers do not have any payment balance. We transfer the -2 into 0
+
+df$PAY_0[df$PAY_0==-2]=0 
+df$PAY_2[df$PAY_2==-2]=0 
+df$PAY_3[df$PAY_3==-2]=0 
+df$PAY_4[df$PAY_4==-2]=0 
+df$PAY_5[df$PAY_5==-2]=0 
+df$PAY_6[df$PAY_6==-2]=0 
+
+
+```
+
+
+## Explore data
+# Numerical variables
+```{r}
+bills = df[,c('BILL_AMT1','BILL_AMT2', 'BILL_AMT3', 'BILL_AMT4', 'BILL_AMT5', 'BILL_AMT6')] #bill amount
+pay = df[,c('PAY_AMT1','PAY_AMT2', 'PAY_AMT3', 'PAY_AMT4', 'PAY_AMT5', 'PAY_AMT6')] #pay amount
+late = df[,c('PAY_0','PAY_2', 'PAY_3', 'PAY_4', 'PAY_5', 'PAY_6')] 
+
+ggplot(gather(bills), aes(value)) + geom_histogram(bins=100)+facet_wrap(~key,scales='free_x')
+ggplot(gather(pay), aes(value)) + geom_histogram(bins=100)+facet_wrap(~key,scales='free_x')
+ggplot(data=df,aes(x=LIMIT_BAL))+geom_histogram()
+#Bills,pay amount and limit balance as we can see from the graph is not normal distribution but rather right skewed. Most of them are 
+
+
+hist(df$AGE)
+hist(df$LIMIT_BAL)
+#limit balance have a very large range, which can cause problems to some some models (for example in linear regression models
+
+
+```
+#limit bill amount ~ default groupd
+```{r}
+#average limit balance in different default group
+mu<-ddply(df,"DEF",summarise, grp.mean=mean(LIMIT_BAL))
+head(mu)
+#
+ggplot(df, aes(x=LIMIT_BAL,color=DEF))+geom_density()
+# Add mean lines
+p<-ggplot(df, aes(x=LIMIT_BAL,color=DEF))+geom_density()+
+  geom_vline(data=mu, aes(xintercept=grp.mean,color=DEF),
+             linetype="dashed")
+p
+
+#As we can see from the density graph, in different default group,
+
+```
+
+
+
+#further analysis, explore potential features
+```{r}
+
+#I try to find out if the SEX MARRIAGE EDUCTION may affect default 
+categorical.data=df %>% select(SEX:MARRIAGE,DEF)
+
+sexplot<-ggplot(data=df,aes(x=SEX,fill=DEF))+geom_bar(stat="count")+theme_minimal()+xlab("SEX") +ylab("Observations count")+ggtitle("SEX & DEFAULT")
+  
+sexplot       
+
+ggplot(df,aes(x=SEX,fill=DEF))+geom_bar(stat="count",position="fill")+
+ggtitle("SEX & DEFAULT percentage")
+
+marriageplot<-ggplot(data=df,aes(x=MARRIAGE,fill=DEF))+geom_bar(stat="count")+theme_minimal()+xlab("MARRIAGE") +ylab("Observations count")+ggtitle("MARRIAGE & DEFAULT")
+marriageplot
+ggplot(df,aes(x=MARRIAGE,fill=DEF))+geom_bar(stat="count",position="fill")+
+ggtitle("MARRIAGE & DEFAULT percentage")
+
+educationplot<-ggplot(data=df,aes(x=EDUCATION,fill=DEF))+geom_bar(stat="count")+theme_minimal()+xlab("EDUCATION") +ylab("Observations count")+ggtitle("EDUCATION & DEFAULT")
+educationplot
+ggplot(df,aes(x=EDUCATION,fill=DEF))+geom_bar(stat="count",position="fill")+
+ggtitle("EDUCATION & DEFAULT percentage")
+
+
+#As we can see from the graph,that in different group in SEX and MARRIAGE, the proportion of people being default is almost the same in different groups.However, in the performance varies in different EDUCATION levels. It seems that people with higher eduction might have less probability to get default. 
+
+```
+
+
+
+
+# Feature Engineering and Variable Selection
+```{r}
+# calculate the correltion between vital variables with our dependent variable
+df$DEF <- as.numeric(df$DEF)
+df_num <- df[,-c(1, 3:6)]
+df_num
+#corr <- cor(as.matrix(df_num[,20]), as.matrix(df_num[,-20]))
+corr <- sapply(c(1:20), function(x)cor(df_num[,20], df_num[,x]))
+corr_mx <- data.frame(names(df_num), corr)
+corr_mx
+```
+
+
+
+After the feature engineering of the data, we want to buid several classification model fit the data.
+The backup model includes Logistic regression, KNN, LDA, QDA, SVM and Random Forest. 
+
+
+split the data into training set and test set
+
+
+
+
+
+
+
+```{r}
+#split the training set and the test set
+set.seed(1)
+
+
+#convert the target value into 0 and 1
+#df$DEF[df$DEF==1]=0
+#df$DEF[df$DEF==2]=1
+
+
+train=sample(nrow(df),size=0.7*nrow(df)) #select training and test data
+test=-(train) #select test data
+#just select the indext of the training set and the test set
+train_set = df[train,][-1]
+test_set = df[test,][-1]
+target<-test_set$DEF
+df<- df[,-1] #delete the meaningless column:ID
+```
+
+## Logistic Model
+```{r}
+#first, try to use the logistic regression to build the classification model and then evaluate the performance of the model.
+set.seed(1)
+
+logist_model<-glm(DEF~., family = binomial, data = train_set)
+
+glm_probs=predict(logist_model, test_set, type ="response")
+glm_pred=rep(0,nrow(test_set))
+```
+
+
+```{r}
+## for this case, I think the thredhold should not be 0.5, instead we should set the shredhold as 0.7
+set.seed(1)
+
+glm_pred[glm_probs >.7]=1
+
+matrix_conf <- data.frame(table(glm_pred, target))
+acc_logistic <- (matrix_conf[1,3]+matrix_conf[4,3])/sum(matrix_conf$Freq)
+print(acc_logistic)
+table(glm_pred, target)
+
+#The accuracy of the logistic regression is 79%, but the recall rate (the ability to predict default behavior) is very low, which is only 149/1997
+
+```
+
+## KNN Model
+```{r}
+#First, using corss validation to select the best K for the KNN model
+set.seed(1)
+
+library(ISLR)
+library(caret)
+
+train_set$DEF <- as.factor(train_set$DEF)
+test_set$DEF <- as.factor(test_set$DEF)
+
+
+# Run k-NN and use CV to find the perfect K.
+ctrl <- trainControl(method="repeatedcv",number = 3)
+#This is the train control fucntion of Caret package. Here we choose repeated cross validation. Repeated 3 means we do everything 3 times for consistency. The number of folds here is omitted, and indicates in how many parts we split the data. The default is 10 folds. In my opinion for roughly 100 samples in this case 10 fold is too high (we only validate ~10 samples each time!). I would suggest using 3CV or 5 CV.
+knnFit <- train(DEF~., data = train_set, method = "knn", trControl = ctrl, preProcess = c("center","scale"),tuneLength = 20)
+
+#In the Caret train function you can specify tuneLength, which is a parameter that uses the parameter(s) default. This is a Caret feature.I think that for kNN, it starts in k=5 and it continues in increments of 2: k = 5, 7, 9, 11, etc? When the cross validation is performed, caret displays the best option for all the parameter values tested.
+
+knnFit
+
+#Use plots to see optimal number of clusters:
+#Plotting yields Number of Neighbours Vs accuracy (based on repeated cross validation)
+plot(knnFit)
+
+# From the result, we can find that the best K in KNN model is 23
+```
+
+
+```{r}
+set.seed(1)
+
+#Put the best K in the 
+##load the package class
+ library(class)
+ ##run knn function
+ knn_model <- knn(train_set,test_set,cl=train_set$DEF,k= 23)
+ 
+ ##create confusion matrix
+ #print(accuracy <- function(x){sum(diag(x)/(sum(rowSums(x)))) * 100})
+
+matrix_conf <- data.frame( table(knn_model,target))
+
+acc_knn <- (matrix_conf[1,3]+matrix_conf[4,3])/sum(matrix_conf$Freq)
+print(acc_knn)
+matrix_conf
+
+#The accuracy of KNN is 0.77, but the recall rate is still pretty low, which is only 177/1997.
+```
+
+
+## LDA 
+```{r}
+set.seed(1)
+
+library(MASS)
+lda_model <-lda(DEF ~ . ,data=train_set)
+####
+lda_pred=predict(lda_model, test_set)
+lda_class =lda_pred$class
+
+matrix_conf <- data.frame( table(lda_class,target))
+table(lda_class,target) 
+
+acc_lda <- (matrix_conf[1,3]+matrix_conf[4,3])/sum(matrix_conf$Freq)
+print(acc_lda)
+
+# the accuracy of lda model is about 81.3%l but the recall rate is low, which is only 593/1997
+```
+
+## QDA
+```{r}
+set.seed(1)
+
+qda_model <-qda(DEF ~ . ,data=train_set)
+####
+qda_pred=predict(qda_model, test_set)
+qda_class =qda_pred$class
+table(qda_class,target) 
+1-mean(qda_class == target)
+
+#Even though the accuracy of QDA is low, but the recall rate is much higher.
+```
+
+## linear SVM
+```{r}
+set.seed(1)
+
+# Fitting SVM to the Training set 
+#install.packages('e1071') 
+library(e1071) 
+#First we need to convert all the x into numeric value  
+
+col.to.numeric<-c('SEX','EDUCATION','MARRIAGE')
+factorToNumeric <- function(f) as.numeric(levels(f))[as.integer(f)] 
+train_set[col.to.numeric]<-lapply(train_set[col.to.numeric],factorToNumeric)
+sapply(train_set, class)
+
+```
+
+
+```{r}
+# Find the best cost C in the linear svm model.
+train_set$DEF <- as.factor(train_set$DEF)
+#using SVM, we need to convert our respond value into factor 
+set.seed (1)
+svm_linear <- train(x = train_set[-24], y = train_set$DEF,
+                  method = 'svmLinear',
+                  trControl = trainControl(method = 'cv', number = 10, allowParallel = TRUE),
+                  tuneGrid = expand.grid(C = seq(0.001, 3, length.out = 10)
+                                         ))
+svm_linear$finalModel
+
+
+```
+
+```{r}
+test_set$DEF <- as.factor(test_set$DEF)
+factorToNumeric <- function(f) as.numeric(levels(f))[as.integer(f)] 
+test_set[col.to.numeric]<-lapply(test_set[col.to.numeric],factorToNumeric)
+sapply(test_set, class)
+
+svm_linear_model <- svm(DEF~., data=train_set, kernel ="linear", cost =  2.67)
+predict<- predict(svm_linear_model, test_set)
+
+confusionMatrix(predict, test_set$DEF)
+
+
+#The linear svm with cost of 2.67(best value) and the recall rate is only 582/1997
+```
+
+
+
+## non-linear SVM
+```{r}
+set.seed(1)
+
+#Support Vector Machines (SVM) are a method that uses points in a transformed problem space that best separate classes into two groups. Classification for multiple classes is supported by a one-vs-all method. SVM also supports regression by modeling the function with a minimum amount of allowable error.
+
+#First try Radial kernal
+set.seed (1)
+svm_radial <- train(x = train_set[-24], y = train_set$DEF,
+                  method = 'svmRadial',
+                  trControl = trainControl(method = 'cv', number = 10, allowParallel = TRUE),
+                  preProcess = c('center', 'scale'),
+                  tuneGrid = expand.grid(C = seq(0.001, 3, length.out = 10),
+                                         sigma = seq(0.2, 2, length.out = 5)))
+svm_radial$finalModel
+
+```
+
+```{r}
+svm_radial_model <- svm(DEF~., data=train_set, kernel ='radial', cost = 0.667 , sigma= 1.1)
+predict<- predict(svm_radial_model, test_set)
+
+confusionMatrix(predict, test_set$DEF)
+```
+
+```{r}
+#Then, try poly kernal
+set.seed (1)
+
+svm_poly <- train(x = train_set[-24], y = train_set$DF,
+                  method = 'svmPoly',
+                  trControl = trainControl(method = 'cv', number = 10, allowParallel = TRUE),
+                  preProcess = c('center', 'scale'),
+                  tuneGrid = expand.grid(degree = seq(1, 8, by = 1),
+                                         C = seq(1, 5, by = 1), 
+                                         scale = TRUE))
+svm_poly$finalModel
+
+```
+
+```{r}
+svm_poly_model <- svm(mpg01~., data=train_set, kernel ='poly', cost = 1 , degree = 3)
+predict<- predict(svm_poly_model, test_set$DEF)
+
+confusionMatrix(predict, test_set$DEF)
+```
+
+
+##Random Forest
+```{r}
+library(ggplot2)
+library(cowplot)
+library(randomForest)
+library(rpart)
+library(ISLR)
+library(tree)
+
+
+#First build a unpruned decision tree
+decision_tree<-tree(DEF~.,train_set)
+#prints output corresponding to each branch of the tree. R displays the split criterion the number of observations in that branch, the deviance, the overall prediction for the branch (Yes or No), and the fraction of observations in that branch that take on values of Yes and No. Branches that lead to terminal nodes are indicated using asterisks.
+
+summary(decision_tree)
+ # check the tree plot
+plot(decision_tree)
+text(decision_tree,pretty =0) 
+
+
+
+#Variables actually used in tree construction:
+#[1] "PAY_0"    "PAY_2"    "PAY_AMT3"
+#Number of terminal nodes:  4 
+tree.pred=predict(decision_tree,train_set,type="class")
+table(tree.pred,train_set$DEF)
+
+#Next, we consider whether pruning the tree might lead to improved results.
+```
+
+
+```{r}
+#n cv.tree() performs cross-validation in order to cv.tree() determine the optimal level of tree complexity; cost complexity pruning is used in order to select a sequence of trees for consideration. We use the argument FUN=prune.misclass in order to indicate that we want the classification error rate to guide the cross-validation and pruning process,rather than the default for the cv.tree() function, which is deviance
+ 
+cvtree=cv.tree(decision_tree,FUN=prune.misclass)
+best_set=cvtree$size
+
+#cv.tree() function reports the number of terminal nodes of each tree considered (size) as well as the corresponding error rate and the value of the cost-complexity parameter used (k, which corresponds to ?? in (8.4)).
+
+prune.decision_tree=prune.misclass(decision_tree,best=3)
+
+tree.pred2=predict(prune.decision_tree,test_set, type="class")
+table(tree.pred2,test_set$DEF)
+```
+
+
+```{r}
+#random forest
+#Find the best mtry number and the most efficient tree number in the forest
+oob.values <- vector(length=23)
+for(i in 1:23) {
+  temp.model <- randomForest(DEF ~ ., data=df, mtry=i, ntree=100, )
+  oob.values[i] <- temp.model$err.rate[nrow(temp.model$err.rate),1]
+}
+oob.values
+## find the minimum error
+min(oob.values)
+## find the optimal value for mtry...
+which(oob.values == min(oob.values))
+
+
+#from the result we can see that the mtry number should be 4.
+```
+
+
+```{r}
+#RF model building
+forest_model=randomForest(DEF~.,data=train_set,mtry=4,importance =TRUE) #use all 23 variables for classification
+forest_model
+
+#Choose the best number of tree in the forest
+oob.error.data <- data.frame(
+  Trees=rep(1:nrow(forest_model$err.rate), times=3),
+  Type=rep(c("OOB", "1", "2"), each=nrow(model$err.rate)),
+  Error=c(forest_model$err.rate[,"OOB"], 
+    model$err.rate[,"1"], 
+    model$err.rate[,"2"]))
+
+ggplot(data=oob.error.data, aes(x=Trees, y=Error)) +
+  geom_line(aes(color=Type))
+
+#from the plot we can see that the most efficient number of tree number is 100.
+```
+
+
+```{r}
+#Build the final model.
+forest_model=randomForest(DEF~.,data=train_set,mtry=4,importance =TRUE, ntree=100) 
+yhat.bag=predict(forest_model,test_set)
+table(yhat.bag,test_set$DEF)
+```
+
+
+
